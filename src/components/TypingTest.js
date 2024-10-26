@@ -171,7 +171,6 @@ const TypingTest = () => {
         <div className="mt-4 space-y-2">
           <p>Time Left: {timeLeft}s</p>
           <p>Completion: {completionPercentage}%</p>
-          <p>Mistakes per Segment: {JSON.stringify(mistakes)}</p>
           {testCompleted && (
             <div>
               <p className="text-green-500">Test completed! Data sent to server.</p>
