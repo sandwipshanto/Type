@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
+const backendUrl = process.env.REACT_APP_API_URL
+
+
 const TypingTest = () => {
   const [givenText, setGivenText] = useState("");
   const [userInput, setUserInput] = useState('');
@@ -34,7 +37,7 @@ const TypingTest = () => {
 
   const fetchRandomText = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/texts/random');
+      const response = await axios.get(`${backendUrl}/texts/random`);
       setGivenText(response.data.content);
     } catch (error) {
       console.error('Error fetching text:', error);
@@ -131,7 +134,7 @@ const TypingTest = () => {
   const postMistakesToServer = async () => {
     try {
       console.log('Posting mistakes to server:', mistakes);
-      const response = await axios.post('http://localhost:5000/api/mistakes', mistakes);
+      const response = await axios.post(`${backendUrl}/mistakes`, mistakes);
       console.log('Server response:', response.data);
     } catch (err) {
       console.error('Error saving mistakes:', err);
