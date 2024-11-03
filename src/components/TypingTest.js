@@ -16,7 +16,6 @@ const TypingTest = () => {
   const [userData, setUserData] = useState(null);
   const [showModal, setShowModal] = useState(true);
   const [testHistory, setTestHistory] = useState([]);
- // const [showTimeSettings, setShowTimeSettings] = useState(false);
   const [charactersTyped, setCharactersTyped] = useState(0);
   const timerRef = useRef(null);
   const mistakeTracker = useRef(null);
@@ -24,30 +23,30 @@ const TypingTest = () => {
   const [secondHalfStats, setSecondHalfStats] = useState(null);
   const [isSecondHalf, setIsSecondHalf] = useState(false);
   const [userId, setUserId] = useState(null);
-const [metricsInterval, setMetricsInterval] = useState(null);
-const [currentMetrics, setCurrentMetrics] = useState({
-  firstHalf: {
-    intervals: [],
-    totalMistakes: 0,
-    totalCharactersTyped: 0
-  },
-  secondHalf: {
-    intervals: [],
-    totalMistakes: 0,
-    totalCharactersTyped: 0
-  }
-});
+  const [metricsInterval, setMetricsInterval] = useState(null);
+  const [currentMetrics, setCurrentMetrics] = useState({
+    firstHalf: {
+      intervals: [],
+      totalMistakes: 0,
+      totalCharactersTyped: 0
+    },
+    secondHalf: {
+      intervals: [],
+      totalMistakes: 0,
+      totalCharactersTyped: 0
+    }
+  });
 
   useEffect(() => {
     fetchRandomText();
     fetchSettings();
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
+      }
+      if (metricsInterval) {
+        clearInterval(metricsInterval);
       }
     };
   }, []);
@@ -85,14 +84,38 @@ const [currentMetrics, setCurrentMetrics] = useState({
     }
   };
 
+  const handleInputChange = (e) => {
+    const input = e.target.value;
+
+    if (!isActive && input.length > 0 && !isBreak) {
+      startTimer();
+    }
+
+    setUserInput(input);
+    setCharactersTyped(input.length);
+
+    // Check for new mistakes
+    let newMistakes = 0;
+    input.split('').forEach((char, idx) => {
+      if (char !== givenText[idx] && !mistakeTracker.current[idx]) {
+        mistakeTracker.current[idx] = true;
+        newMistakes++;
+      }
+    });
+
+    if (newMistakes > 0) {
+      setMistakes(prev => prev + newMistakes);
+    }
+  };
+
   const startMetricsTracking = () => {
     if (metricsInterval) clearInterval(metricsInterval);
-    
+
     let startTime = Date.now();
     const interval = setInterval(() => {
       const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
       const currentHalf = isSecondHalf ? 'secondHalf' : 'firstHalf';
-      
+
       setCurrentMetrics(prev => ({
         ...prev,
         [currentHalf]: {
@@ -106,22 +129,21 @@ const [currentMetrics, setCurrentMetrics] = useState({
           totalCharactersTyped: charactersTyped
         }
       }));
-    }, 10000); // every 10 seconds
-    
+    }, 10000);
+
     setMetricsInterval(interval);
   };
 
   const startTimer = () => {
     if (isActive) return;
-  
+
     setIsActive(true);
     startMetricsTracking();
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
-    
-    setIsActive(true);
+
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -145,21 +167,18 @@ const [currentMetrics, setCurrentMetrics] = useState({
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    
+
     setIsActive(false);
     setIsBreak(true);
     setTimeLeft(breakTime);
+
+    // Save first half stats
     setFirstHalfStats({
-      characterTyped: charactersTyped,
+      charactersTyped: charactersTyped,
       mistakes: mistakes,
       timeSpent: halfTime
     });
-    
-    // Start break timer in a separate interval
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    
+
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -172,7 +191,7 @@ const [currentMetrics, setCurrentMetrics] = useState({
       });
     }, 1000);
   };
-  
+
   const startSecondHalf = () => {
     setIsBreak(false);
     setIsSecondHalf(true);
@@ -180,14 +199,47 @@ const [currentMetrics, setCurrentMetrics] = useState({
     setUserInput('');
     setMistakes(0);
     setCharactersTyped(0);
+    mistakeTracker.current = new Array(givenText.length).fill(false);
     fetchRandomText();
   };
 
-  const handleTestComplete = () => {
+  const handleTestComplete = async () => {
     clearInterval(metricsInterval);
 
-    const saveMetrics = async () => {
+    const secondHalfStats = {
+      charactersTyped: charactersTyped,
+      mistakes: mistakes,
+      timeSpent: halfTime
+    };
+
+    setSecondHalfStats(secondHalfStats);
+
+    // Only save test data if both halves are complete
+    if (firstHalfStats) {
+      const testData = {
+        userId,
+        name: userData.name,
+        registrationNumber: userData.registrationNumber,
+        department: userData.department,
+        timeIntervalStat: halfTime * 2,
+        halfTime,
+        breakTime,
+        charactersTyped: firstHalfStats.charactersTyped + secondHalfStats.charactersTyped,
+        mistakes: firstHalfStats.mistakes + secondHalfStats.mistakes,
+        firstHalf: {
+          charactersTyped: firstHalfStats.charactersTyped,
+          mistakes: firstHalfStats.mistakes,
+          timeSpent: halfTime
+        },
+        secondHalf: {
+          charactersTyped: secondHalfStats.charactersTyped,
+          mistakes: secondHalfStats.mistakes,
+          timeSpent: halfTime
+        }
+      };
+
       try {
+        // Save metrics first
         await axios.post(`${backendUrl}/metrics`, {
           userId,
           firstHalf: currentMetrics.firstHalf,
@@ -195,130 +247,102 @@ const [currentMetrics, setCurrentMetrics] = useState({
           halfTime,
           breakTime
         });
-      } catch (error) {
-        console.error('Error saving metrics:', error);
-      }
-    };
-    
-    saveMetrics();
 
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+        // Then save test summary
+        const response = await axios.post(`${backendUrl}/tests`, testData);
+        setTestHistory(prev => [...prev, response.data]);
+      } catch (error) {
+        console.error('Error saving test data:', error);
+      }
     }
-    
-    setIsActive(false);
-    
-    const secondHalfStats = {
-      characterTyped: charactersTyped,
-      mistakes: mistakes,
-      timeSpent: halfTime
-    };
-    
-    const totalStats = {
-      name: userData.name,
-      registrationNumber: userData.registrationNumber,
-      department: userData.department,
-      firstHalf: firstHalfStats,
-      secondHalf: secondHalfStats,
-      halfTime,
-      breakTime
-    };
-    
-    saveTestData(totalStats);
+
+    resetTestState();
+  };
+
+  const resetTestState = () => {
     setUserInput('');
     setMistakes(0);
     setCharactersTyped(0);
     setTimeLeft(halfTime);
-    setIsSecondHalf(false);
+    setIsActive(false);
     setIsBreak(false);
+    setIsSecondHalf(false);
     setFirstHalfStats(null);
     setSecondHalfStats(null);
+    mistakeTracker.current = new Array(givenText.length).fill(false);
+    setCurrentMetrics({
+      firstHalf: {
+        intervals: [],
+        totalMistakes: 0,
+        totalCharactersTyped: 0
+      },
+      secondHalf: {
+        intervals: [],
+        totalMistakes: 0,
+        totalCharactersTyped: 0
+      }
+    });
     fetchRandomText();
   };
 
-  useEffect(() => {
-    return () => {
-      if (metricsInterval) {
-        clearInterval(metricsInterval);
-      }
-    };
-  }, []);
+  const resetTest = () => {
+    if (!isActive && !isBreak) {
+      resetTestState();
+      return;
+    }
 
-  // const handleTimeSettingsChange = (type, value) => {
-  //   const numValue = parseInt(value);
-  //   if (type === 'half') {
-  //     setHalfTime(numValue);
-  //     if (!isActive && !isBreak) {
-  //       setTimeLeft(numValue);
-  //     }
-  //   } else {
-  //     setBreakTime(numValue);
-  //   }
-  // };
-
-  const saveTestData = async (stats) => {
-    if (!userData || !stats) return;
-  
-    const testData = {
-      name: userData.name,
-      registrationNumber: userData.registrationNumber,
-      department: userData.department,
-      timeIntervalStat: stats.firstHalf.timeSpent + stats.secondHalf.timeSpent,
-      halfTime,
-      breakTime,
-      characterTyped: stats.firstHalf.characterTyped + stats.secondHalf.characterTyped,
-      mistakes: stats.firstHalf.mistakes + stats.secondHalf.mistakes,
-      firstHalf: stats.firstHalf,
-      secondHalf: stats.secondHalf
+    const currentStats = {
+      charactersTyped: charactersTyped,
+      mistakes: mistakes,
+      timeSpent: halfTime - timeLeft
     };
-  
+
+    if (isSecondHalf && firstHalfStats) {
+      const testData = {
+        userId,
+        name: userData.name,
+        registrationNumber: userData.registrationNumber,
+        department: userData.department,
+        timeIntervalStat: (halfTime - timeLeft) + halfTime,
+        halfTime,
+        breakTime,
+        charactersTyped: firstHalfStats.charactersTyped + currentStats.charactersTyped,
+        mistakes: firstHalfStats.mistakes + currentStats.mistakes,
+        firstHalf: {
+          charactersTyped: firstHalfStats.charactersTyped,
+          mistakes: firstHalfStats.mistakes,
+          timeSpent: halfTime
+        },
+        secondHalf: {
+          charactersTyped: currentStats.charactersTyped,
+          mistakes: currentStats.mistakes,
+          timeSpent: halfTime - timeLeft
+        }
+      };
+
+      saveTestData(testData);
+    } else if (!isBreak) {
+      setFirstHalfStats(currentStats);
+    }
+
+    resetTestState();
+  };
+
+  const saveTestData = async (testData) => {
+    if (!userData || !testData) return;
+
     try {
-      await axios.post(`${backendUrl}/tests`, testData);
-      setTestHistory(prev => [...prev, testData]);
+      const response = await axios.post(`${backendUrl}/tests`, testData);
+      setTestHistory(prev => [...prev, response.data]);
     } catch (error) {
       console.error('Error saving test data:', error);
     }
   };
 
-  
-
-  const resetTest = () => {
-    setUserInput('');
-    setMistakes(0);
-    setCharactersTyped(0);
-    setTimeLeft(halfTime);
-    setIsActive(false);
-    setIsBreak(false);
-    setIsSecondHalf(false);
-    setFirstHalfStats(null);
-    setSecondHalfStats(null);
-    fetchRandomText();
-  };
-
-  const handleInputChange = (e) => {
-    const input = e.target.value;
-    
-    if (!isActive && input.length > 0 && !isBreak) {
-      startTimer();
-    }
-  
-    setUserInput(input);
-    setCharactersTyped(input.length);
-  
-    // Check for new mistakes
-    input.split('').forEach((char, idx) => {
-      if (char !== givenText[idx] && !mistakeTracker.current[idx]) {
-        mistakeTracker.current[idx] = true;
-        setMistakes(prev => prev + 1);
-      }
-    });
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
       <UserModal isOpen={showModal} onSubmit={handleUserSubmit} />
-      
+
       {!showModal && (
         <div className="max-w-2xl w-full p-8">
           <div className="mb-6 flex justify-between items-center">
@@ -326,57 +350,19 @@ const [currentMetrics, setCurrentMetrics] = useState({
               <p>Time Left: {timeLeft}s</p>
               <p>Mistakes: {mistakes}</p>
               <p>Characters Typed: {charactersTyped}</p>
+              {isSecondHalf && (
+                <p>First Half Characters: {firstHalfStats?.charactersTyped || 0}</p>
+              )}
             </div>
             <div className="flex flex-col gap-2">
-              {/* <button
-                onClick={() => setShowTimeSettings(!showTimeSettings)}
-                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-              >
-                {showTimeSettings ? 'Hide Settings' : 'Change Time Settings'}
-              </button> */}
               <button
                 onClick={resetTest}
                 className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
               >
-                End Test
+                {isActive || isBreak ? 'End Test' : 'Reset'}
               </button>
             </div>
           </div>
-
-          {/* {showTimeSettings && (
-            <div className="mb-4 p-4 bg-gray-800 rounded">
-              <div className="flex gap-4">
-                <div>
-                  <label className="block mb-2">Half Time (seconds):</label>
-                  <select
-                    value={halfTime}
-                    onChange={(e) => handleTimeSettingsChange('half', e.target.value)}
-                    className="bg-gray-700 rounded p-2"
-                    disabled={isActive || isBreak}
-                  >
-                    <option value="60">1 minute</option>
-                    <option value="120">2 minutes</option>
-                    <option value="180">3 minutes</option>
-                    <option value="300">5 minutes</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block mb-2">Break Time (seconds):</label>
-                  <select
-                    value={breakTime}
-                    onChange={(e) => handleTimeSettingsChange('break', e.target.value)}
-                    className="bg-gray-700 rounded p-2"
-                    disabled={isActive || isBreak}
-                  >
-                    <option value="15">15 seconds</option>
-                    <option value="30">30 seconds</option>
-                    <option value="45">45 seconds</option>
-                    <option value="60">60 seconds</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )} */}
 
           {isBreak ? (
             <div className="text-center">
@@ -392,8 +378,8 @@ const [currentMetrics, setCurrentMetrics] = useState({
                       userInput[idx] === char
                         ? 'text-green-500'
                         : userInput[idx]
-                        ? 'text-red-500'
-                        : ''
+                          ? 'text-red-500'
+                          : ''
                     }
                   >
                     {char}
